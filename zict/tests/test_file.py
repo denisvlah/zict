@@ -1,11 +1,12 @@
 from __future__ import absolute_import, division, print_function
-
+import pandas as pd
+import numpy as np
 import os
 import shutil
 
 import pytest
 
-from zict.file import File, _WriteAheadLog
+from zict.file import File, _WriteAheadLog, _WAL_NAME
 from . import utils_test
 
 
@@ -35,47 +36,22 @@ def test_mapping(fn):
     utils_test.check_mapping(z)
 
 
-def test_implementation(fn):
-    z = File(fn)
-    assert not z
-
-    z['x'] = b'123'
-    assert os.listdir(fn) == ['x']
-    with open(os.path.join(fn, 'x'), 'rb') as f:
-        assert f.read() == b'123'
-
-    assert 'x' in z
-
-
 def test_str(fn):
     z = File(fn)
     assert fn in str(z)
     assert fn in repr(z)
-    assert z.mode in str(z)
-    assert z.mode in repr(z)
-
-
-def test_setitem_typeerror(fn):
-    z = File(fn)
-    with pytest.raises(TypeError):
-        z['x'] = 123
-
-
-def test_contextmanager(fn):
-    with File(fn) as z:
-        z['x'] = b'123'
-
-    with open(os.path.join(fn, 'x'), 'rb') as f:
-        assert f.read() == b'123'
+    assert z._mode in str(z)
+    assert z._mode in repr(z)
 
 
 def test_delitem(fn):
     z = File(fn)
 
     z['x'] = b'123'
-    assert os.path.exists(os.path.join(z.directory, 'x'))
+    path = z.get_file_path('x')
+    assert os.path.exists(path)
     del z['x']
-    assert not os.path.exists(os.path.join(z.directory, 'x'))
+    assert not os.path.exists(path)
 
 
 def test_missing_key(fn):
@@ -114,11 +90,7 @@ def test_arbitrary_chars(fn):
             z[key]
 
 
-def test_write_list_of_bytes(fn):
-    z = File(fn)
 
-    z['x'] = [b'123', b'4567']
-    assert z['x'] == b'1234567'
 
 
 def test_item_with_very_long_name_can_be_read_and_deleted_and_restored(fn):
@@ -168,3 +140,66 @@ def test_write_ahead_log_can_read_keys_from_file_writen_by_another_instance(fn):
 
     vals = wal2.get_all_pairs()
     assert expected == vals
+
+
+def test_list_with_pandas_df_can_be_written(fn):
+    z = File(fn)
+    df1 = pd.DataFrame({'a': [1]})
+    l = [df1, 'l']
+    z['a'] = l
+    val_back = z['a']
+    assert isinstance(val_back, list)
+    assert val_back[1] == 'l'
+    assert val_back[0]['a'].iloc[0] == 1
+
+
+def test_tuple_with_pandas_df_can_be_written(fn):
+    z = File(fn)
+    df1 = pd.DataFrame({'a': [1]})
+    l = (df1, 'l')
+    z['a'] = l
+    val_back = z['a']
+    assert isinstance(val_back, tuple)
+    assert val_back[1] == 'l'
+    assert val_back[0]['a'].iloc[0] == 1
+
+
+def test_tuple_with_np_array_can_be_written(fn):
+    z = File(fn)
+    a = np.random.randint(100)
+    l = (a, 'l')
+    z['a'] = l
+    val_back = z['a']
+    assert isinstance(val_back, tuple)
+    assert val_back[1] == 'l'
+    assert val_back[0] == a
+
+
+def test_list_with_np_array_can_be_written(fn):
+    z = File(fn)
+    a = np.random.randint(100)
+    l = [a, 'l']
+    z['a'] = l
+    val_back = z['a']
+    assert isinstance(val_back, list)
+    assert val_back[1] == 'l'
+    assert val_back[0] == a
+
+
+def test_list_with_np_array_can_be_removed(fn):
+    z = File(fn)
+    a = np.random.randint(100)
+    l = [a, 'l']
+    z['a'] = l
+    del z['a']
+    file_names = os.listdir(z._directory)
+    filtered_file_names = [f for f in file_names if f != _WAL_NAME]
+    assert len(filtered_file_names) == 0
+
+
+def test_pandas_obj_can_be_written(fn):
+    z = File(fn)
+    df = pd.DataFrame({'a': [1]})
+    z['a'] = df
+    assert z['a']['a'].iloc[0] == 1
+

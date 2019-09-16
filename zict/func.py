@@ -31,15 +31,14 @@ class Func(ZictBase):
     10.0
     """
     def __init__(self, dump, load, d):
-        self.dump = dump
-        self.load = load
         self.d = d
 
     def __getitem__(self, key):
-        return self.load(self.d[key])
+        val = self.d[key]
+        return val
 
     def __setitem__(self, key, value):
-        self.d[key] = self.dump(value)
+        self.d[key] = value
 
     def __contains__(self, key):
         return key in self.d
@@ -51,13 +50,19 @@ class Func(ZictBase):
         return self.d.keys()
 
     def values(self):
-        return map(self.load, self.d.values())
+        result = []
+        for val in self.d.values:
+            result.append(val)
+        return result
 
     def items(self):
-        return ((k, self.load(v)) for k, v in self.d.items())
+        result = []
+        for k, val in self.d.items():
+            result.append((k, val))
+        return result
 
     def _do_update(self, items):
-        self.d.update((k, self.dump(v)) for k, v in items)
+        self.d.update((k, v) for k, v in items)
 
     def __iter__(self):
         return iter(self.d)
@@ -66,10 +71,9 @@ class Func(ZictBase):
         return len(self.d)
 
     def __str__(self):
-        return '<Func: %s<->%s %s>' % (funcname(self.dump),
-                                       funcname(self.load),
+        return '<Func: %s<->%s %s>' % ('',
+                                       '',
                                        str(self.d))
-
     __repr__ = __str__
 
     def flush(self):

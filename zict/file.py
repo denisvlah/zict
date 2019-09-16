@@ -1,9 +1,13 @@
 from __future__ import absolute_import, division, print_function
 
 import os
+import path
 import pickle
-import uuid
 import struct
+import uuid
+
+import numpy as np
+import pandas as pd
 
 try:
     from urllib.parse import quote, unquote
@@ -81,6 +85,93 @@ class _WriteAheadLog:
 _WAL_NAME = 'f_a3d4e639575448efa18ed45bdbf5882a.bin'
 
 
+class SubstetutedValue:
+    def __init__(self, val, base_path):
+        self.has_substetuted_val = False
+        self.base_path = base_path
+        self.path = os.path.join(base_path, _get_uniq_name())
+        if isinstance(val, pd.DataFrame):
+            self.val_type = 'dataframe'
+        elif isinstance(val, pd.Series):
+            self.val_type = 'series'
+        elif isinstance(val, np.ndarray):
+            self.val_type = 'nparray'
+            self.path += '.npy'
+        else:
+            self.val_type = 'generic'
+
+        if self.val_type == 'dataframe':
+            val.to_parquet(self.path, engine='pyarrow', compression='gzip')
+        elif self.val_type == 'series':
+            df = pd.DataFrame(val)
+            df.to_parquet(self.path, engine='pyarrow', compression='gzip')
+        elif self.val_type == 'nparray':
+            np.save(self.path, val)
+        else:
+            val = self._substetute_vals(val)
+            with open(self.path, 'wb') as f:
+                pickle.dump(val, f)
+
+    def _substetute_vals(self, vals):
+        if not (isinstance(vals, list) or isinstance(vals, type)):
+            return vals
+        is_tuple = isinstance(vals, tuple)
+        vals = list(vals)
+        for i in range(len(vals)):
+            if isinstance(vals[i], pd.DataFrame) or isinstance(vals[i], pd.Series) or isinstance(vals[i], np.ndarray):
+                vals[i] = SubstetutedValue(vals[i], self.base_path)
+                self.has_substetuted_val = True
+
+        if is_tuple:
+            vals = tuple(vals)
+
+        return vals
+
+    def _substetute_vals_back(self, vals):
+        if not (isinstance(vals, list) or isinstance(vals, type)):
+            return vals
+        is_tuple = isinstance(vals, tuple)
+        vals = list(vals)
+        for i in range(len(vals)):
+            if isinstance(vals[i], SubstetutedValue):
+                vals[i] = vals[i].get_value()
+
+        if is_tuple:
+            vals = tuple(vals)
+
+        return vals
+
+    def get_value(self, substetute_vals=True):
+        if self.val_type == 'dataframe':
+            df = pd.read_parquet(self.path, engine='pyarrow')
+            return df
+        if self.val_type == 'series':
+            df = pd.read_parquet(self.path, engine='pyarrow')
+            cols = list(df.columns)
+            return df[cols[0]]
+        if self.val_type == 'nparray':
+            val = np.load(self.path)
+            return val
+        result = None
+        with open(self.path, 'rb') as f:
+            result = pickle.load(f)
+        if substetute_vals:
+            result = self._substetute_vals_back(result)
+        return result
+
+    def get_file_path(self):
+        return self.path
+
+    def del_file(self):
+        if self.has_substetuted_val:
+            val = self.get_value(substetute_vals=False)
+            for sub_val in val:
+                if isinstance(sub_val, SubstetutedValue):
+                    sub_val.del_file()
+
+        os.remove(self.path)
+
+
 #After that create a package and create a merge request
 class File(ZictBase):
     """ Mutable Mapping interface to a directory
@@ -113,58 +204,40 @@ class File(ZictBase):
     >>> z['data'] = np.ones(5).data  # doctest: +SKIP
     """
     def __init__(self, directory, mode='a'):
-        self.directory = directory
-        self.mode = mode
-        self._keys = set()
-        self._long_key_to_val_map = {}
-        self._wal = _WriteAheadLog(os.path.join(directory, _WAL_NAME))
-        if not os.path.exists(self.directory):
-            os.mkdir(self.directory)
-        else:
-            for n in os.listdir(self.directory):
-                if n != _WAL_NAME:
-                    self._keys.add(_unsafe_key(n))
+        self._directory = directory
+        self._mode = mode
+        self._keys = {}
+        if not os.path.exists(self._directory):
+            os.mkdir(self._directory)
 
-        for key, value, action in self._wal.get_all_pairs():
-            if action == 'a':
-                self._long_key_to_val_map[key] = value
+        self._wal_path = os.path.join(directory, _WAL_NAME)
+        self._wal = _WriteAheadLog(self._wal_path)
+        for k, v, a in self._wal.get_all_pairs():
+            if a == 'a':
+                self._keys[k] = v
             else:
-                del self._long_key_to_val_map[key]
-
-        for k in self._long_key_to_val_map.keys():
-            self._keys.add(k)
+                del self._keys[k]
 
     def __str__(self):
-        return '<File: %s, mode="%s", %d elements>' % (self.directory, self.mode, len(self))
+        return '<File: %s, mode="%s", %d elements>' % (self._directory, self._mode, len(self))
 
     __repr__ = __str__
 
     def __getitem__(self, key):
-        if key not in self._keys:
-            raise KeyError(key)
-        if key in self._long_key_to_val_map:
-            key = self._long_key_to_val_map[key]
-        with open(os.path.join(self.directory, _safe_key(key)), 'rb') as f:
-            return f.read()
+        return self._keys[key].get_value()
 
     def __setitem__(self, key, value):
-        original_key = key
-        if len(_safe_key(key)) > 250:
-            short_key = _get_uniq_name()
-            self._long_key_to_val_map[key] = short_key
-            self._wal.write_key_value_and_action(key, short_key, 'a')
-            key = short_key
-
-        with open(os.path.join(self.directory, _safe_key(key)), 'wb') as f:
-            if isinstance(value, (tuple, list)):
-                for v in value:
-                    f.write(v)
-            else:
-                f.write(value)
-        self._keys.add(original_key)
+        substetuted_val = SubstetutedValue(value, self._directory)
+        self._wal.write_key_value_and_action(key, substetuted_val, 'a')
+        self._keys[key] = substetuted_val
 
     def __contains__(self, key):
         return key in self._keys
+
+    def get_file_path(self, key):
+        if key not in self._keys:
+            raise KeyError(key)
+        return self._keys[key].get_file_path()
 
     def keys(self):
         return iter(self._keys)
@@ -174,14 +247,10 @@ class File(ZictBase):
     def __delitem__(self, key):
         if key not in self._keys:
             raise KeyError(key)
-        original_key = key
-        if len(_safe_key(key)) > 250:
-            short_key = self._long_key_to_val_map[key]
-            self._wal.write_key_value_and_action(key, short_key, 'd')
-            key = short_key
-
-        os.remove(os.path.join(self.directory, _safe_key(key)))
-        self._keys.remove(original_key)
+        substetuted_val = self._keys[key]
+        self._wal.write_key_value_and_action(key, substetuted_val, 'd')
+        substetuted_val.del_file()
+        del self._keys[key]
 
     def __len__(self):
         return len(self._keys)
