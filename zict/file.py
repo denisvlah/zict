@@ -89,9 +89,9 @@ class SubstetutedValue:
         self.has_substetuted_val = False
         self.base_path = base_path
         self.path = os.path.join(base_path, _get_uniq_name())
-        if isinstance(val, pd.DataFrame):
+        if isinstance(val, pd.DataFrame) and len(val) > 0:
             self.val_type = 'dataframe'
-        elif isinstance(val, pd.Series):
+        elif (isinstance(val, pd.Series) or isinstance(val, pd.Index)) and len(val) > 0 and val.name is not None:
             self.val_type = 'series'
         elif isinstance(val, np.ndarray):
             self.val_type = 'nparray'
@@ -166,7 +166,7 @@ class SubstetutedValue:
 
         return vals
 
-    def get_value(self, substetute_vals=True):
+    def _get_value(self, substetute_vals=True):
         if self.val_type == 'dataframe':
             df = pd.read_parquet(self.path, engine='pyarrow')
             return self._substitue_non_str_cols_back(df)
@@ -184,6 +184,13 @@ class SubstetutedValue:
         if substetute_vals:
             result = self._substetute_vals_back(result)
         return result
+
+    def get_value(self, substetute_vals=True):
+        try:
+            return self._get_value(substetute_vals=substetute_vals)
+        except:
+            print('--------- BAD FILE: ' + self.path)
+            raise
 
     def get_file_path(self):
         return self.path

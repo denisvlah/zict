@@ -231,3 +231,46 @@ def test_pandas_series_with_int_col_names_can_be_saved_and_retrieved(fn):
     assert s.name == s2.name
 
 
+def test_pandas_index_with_int_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.Index([1, 2, 3, 4], name=(1))
+    z['a'] = s
+    s2 = z['a']
+    assert list(s) == list(s2)
+    assert s.name == s2.name
+
+
+def test_pandas_index_with_empty_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.Index([1, 2, 3, 4])
+    z['a'] = s
+    s2 = z['a']
+    assert list(s) == list(s2)
+    assert s.name == s2.name
+
+
+def test_pandas_index_with_empty_str_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.Index([1, 2, 3, 4], name='x')
+    z['a'] = s
+    s2 = z['a']
+    assert list(s) == list(s2)
+    assert s.name == s2.name
+
+
+def test_empty_pandas_index_with_empty_str_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.Index([], name='')
+    z['a'] = s
+    s2 = z['a']
+    assert list(s) == list(s2)
+    assert s.name == s2.name
+
+
+def test_empty_pandas_df_with_empty_str_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.DataFrame()
+    z['a'] = s
+    s2 = z['a']
+    assert all(s == s2)
+
