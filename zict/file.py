@@ -82,7 +82,7 @@ class _WriteAheadLog:
 
 
 _WAL_NAME = 'f_a3d4e639575448efa18ed45bdbf5882a.bin'
-
+custom_prefix = '_a3d4e639575448efa18ed45bdbf5882a_'
 
 class SubstetutedValue:
     def __init__(self, val, base_path):
@@ -100,16 +100,42 @@ class SubstetutedValue:
             self.val_type = 'generic'
 
         if self.val_type == 'dataframe':
-            val.to_parquet(self.path, engine='pyarrow', compression='gzip')
+            val2 = self._substitue_non_str_cols(val)
+            val2.to_parquet(self.path, engine='pyarrow', compression='gzip')
         elif self.val_type == 'series':
             df = pd.DataFrame(val)
-            df.to_parquet(self.path, engine='pyarrow', compression='gzip')
+            df2 = self._substitue_non_str_cols(df)
+            df2.to_parquet(self.path, engine='pyarrow', compression='gzip')
         elif self.val_type == 'nparray':
             np.save(self.path, val)
         else:
             val = self._substetute_vals(val)
             with open(self.path, 'wb') as f:
                 pickle.dump(val, f)
+
+    def _substitue_non_str_cols(self, df: pd.DataFrame) -> pd.DataFrame:
+        new_cols = {}
+        for col in df.columns:
+            if not type(col) == str:
+                new_cols[col] = custom_prefix + str(col)
+
+        if not new_cols:
+            return df
+        df2 = df.rename(columns=new_cols)
+        return df2
+
+    def _substitue_non_str_cols_back(self, df: pd.DataFrame) -> pd.DataFrame:
+        new_cols = {}
+        for col in df.columns:
+            if col.startswith(custom_prefix):
+                new_col = col[len(custom_prefix):]
+                new_col = eval(new_col)
+                new_cols[col] = new_col
+
+        if not new_cols:
+            return df
+
+        return df.rename(columns=new_cols)
 
     def _substetute_vals(self, vals):
         if not (isinstance(vals, list) or isinstance(vals, type)):
@@ -143,9 +169,10 @@ class SubstetutedValue:
     def get_value(self, substetute_vals=True):
         if self.val_type == 'dataframe':
             df = pd.read_parquet(self.path, engine='pyarrow')
-            return df
+            return self._substitue_non_str_cols_back(df)
         if self.val_type == 'series':
             df = pd.read_parquet(self.path, engine='pyarrow')
+            df = self._substitue_non_str_cols_back(df)
             cols = list(df.columns)
             return df[cols[0]]
         if self.val_type == 'nparray':

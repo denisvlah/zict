@@ -90,9 +90,6 @@ def test_arbitrary_chars(fn):
             z[key]
 
 
-
-
-
 def test_item_with_very_long_name_can_be_read_and_deleted_and_restored(fn):
     z = File(fn)
     long_key1 = 'a' + 'a'.join(str(i) for i in range(500))
@@ -202,4 +199,35 @@ def test_pandas_obj_can_be_written(fn):
     df = pd.DataFrame({'a': [1]})
     z['a'] = df
     assert z['a']['a'].iloc[0] == 1
+
+
+def test_pandas_with_int_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    df1 = pd.DataFrame({1: [1, 2, 3], 'a': [1, 2, 3]})
+    z['a'] = df1
+    df2: pd.DataFrame = z['a']
+    assert list(df1.columns) == list(df2.columns)
+    assert list(df1[1]) == list(df2[1])
+    assert list(df1['a']) == list(df2['a'])
+
+
+def test_pandas_with_int_and_unicode_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    col_name = u'【明報專訊】'
+    df1 = pd.DataFrame({1: [1, 2, 3], col_name: [1, 2, 3]})
+    z['a'] = df1
+    df2: pd.DataFrame = z['a']
+    assert list(df1.columns) == list(df2.columns)
+    assert list(df1[1]) == list(df2[1])
+    assert list(df1[col_name]) == list(df2[col_name])
+
+
+def test_pandas_series_with_int_col_names_can_be_saved_and_retrieved(fn):
+    z = File(fn)
+    s = pd.Series([1, 2, 3, 4], name=(1))
+    z['a'] = s
+    s2 = z['a']
+    assert list(s) == list(s2)
+    assert s.name == s2.name
+
 
