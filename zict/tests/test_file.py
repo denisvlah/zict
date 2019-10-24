@@ -273,4 +273,3 @@ def test_empty_pandas_df_with_empty_str_col_names_can_be_saved_and_retrieved(fn)
     z['a'] = s
     s2 = z['a']
     assert all(s == s2)
-
